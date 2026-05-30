@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pneumonia AI Detector</title>
+<style>
+  :root{--bg:#0a0e1a;--surface:#111827;--accent:#00d4ff;--danger:#ff4757;--safe:#2ed573;--text:#e2e8f0}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+  .hero{text-align:center;padding:60px 20px 30px}
+  .hero h1{font-size:2.5rem;font-weight:800;background:linear-gradient(90deg,var(--accent),#7c3aed);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .card{background:var(--surface);border:1px solid #1e2a3a;border-radius:16px;padding:32px;margin:20px auto;max-width:800px}
+  .upload-zone{border:2px dashed #334155;border-radius:12px;padding:48px;text-align:center;cursor:pointer;transition:all .3s}
+  .upload-zone:hover{border-color:var(--accent);background:rgba(0,212,255,.04)}
+  .upload-zone input{display:none}
+  .btn{background:linear-gradient(135deg,var(--accent),#7c3aed);color:#fff;border:none;border-radius:10px;padding:14px 36px;font-size:1rem;font-weight:700;cursor:pointer;width:100%;margin-top:16px}
+  .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}
+  .result-box{background:#0d1627;border-radius:12px;padding:20px;text-align:center}
+  .badge{display:inline-block;padding:8px 24px;border-radius:50px;font-weight:800;font-size:1.4rem;margin:8px 0}
+  .badge.pneumonia{background:rgba(255,71,87,.15);color:var(--danger);border:2px solid var(--danger)}
+  .badge.normal{background:rgba(46,213,115,.15);color:var(--safe);border:2px solid var(--safe)}
+  .prob-bar{background:#1e2a3a;border-radius:50px;height:10px;margin:8px 0;overflow:hidden}
+  .prob-fill{height:100%;border-radius:50px;transition:width 1s ease}
+  .gradcam-img{width:100%;border-radius:12px;border:2px solid #1e2a3a;margin-top:12px}
+  #preview{max-width:100%;border-radius:12px;margin:16px 0;display:none}
+  .loading{display:none;text-align:center;padding:24px;color:var(--accent)}
+  .spinner{border:3px solid #1e2a3a;border-top:3px solid var(--accent);border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;margin:0 auto 12px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="hero">
+  <h1>Pneumonia AI Detector</h1>
+  <p>EfficientNetV2 + GradCAM++ &mdash; Upload a Chest X-Ray for instant analysis</p>
+</div>
+<div class="card">
+  <div class="upload-zone" id="dropZone">
+    <input type="file" id="fileInput" accept="image/*">
+    <p style="font-size:1.1rem;font-weight:600">Drop X-Ray image here or click to browse</p>
+    <p style="font-size:.85rem;color:#64748b;margin-top:6px">Supports JPG, PNG, JPEG</p>
+  </div>
+  <img id="preview" alt="Preview">
+  <button class="btn" onclick="predict()" id="predictBtn" style="display:none">Analyze X-Ray</button>
+</div>
+<div class="loading" id="loading"><div class="spinner"></div><p>Analyzing with AI...</p></div>
+<div id="results"></div>
+<script>
+let selectedFile;
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+dropZone.onclick = () => fileInput.click();
+fileInput.onchange = e => loadFile(e.target.files[0]);
+dropZone.ondragover = e => { e.preventDefault(); };
+dropZone.ondrop = e => { e.preventDefault(); loadFile(e.dataTransfer.files[0]); };
+function loadFile(f) {
+  if (!f) return;
+  selectedFile = f;
+  const r = new FileReader();
+  r.onload = e => {
+    const p = document.getElementById('preview');
+    p.src = e.target.result; p.style.display = 'block';
+    document.getElementById('predictBtn').style.display = 'block';
+  };
+  r.readAsDataURL(f);
+}
+async function predict() {
+  if (!selectedFile) return;
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('results').innerHTML = '';
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+  try {
+    const r = await fetch('/predict', { method: 'POST', body: fd });
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    showResults(d);
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    alert('Error: ' + e);
+  }
+}
+function showResults(d) {
+  const isPneu = d.prediction === 'PNEUMONIA';
+  document.getElementById('results').innerHTML = `
+    <div class="card">
+      <h2 style="margin-bottom:20px">Analysis Results</h2>
+      <div class="result-grid">
+        <div class="result-box">
+          <p style="color:#94a3b8;margin-bottom:8px">Diagnosis</p>
+          <div class="badge ${isPneu ? 'pneumonia' : 'normal'}">${d.prediction}</div>
+          <p style="margin-top:12px;font-size:1.5rem;font-weight:700">${d.confidence}% confident</p>
+        </div>
+        <div class="result-box">
+          <p style="color:#94a3b8;margin-bottom:12px">Probability Breakdown</p>
+          <p>PNEUMONIA <span style="float:right">${d.probability_pneumonia}%</span></p>
+          <div class="prob-bar"><div class="prob-fill" style="width:${d.probability_pneumonia}%;background:#ff4757"></div></div>
+          <p style="margin-top:10px">NORMAL <span style="float:right">${d.probability_normal}%</span></p>
+          <div class="prob-bar"><div class="prob-fill" style="width:${d.probability_normal}%;background:#2ed573"></div></div>
+        </div>
+      </div>
+      <div style="margin-top:24px">
+        <p style="font-weight:600;margin-bottom:8px">GradCAM++ Heatmap — Model Attention</p>
+        <img src="data:image/png;base64,${d.gradcam_image}" class="gradcam-img" alt="GradCAM">
+      </div>
+    </div>`;
+}
+</script>
+</body>
+</html>
