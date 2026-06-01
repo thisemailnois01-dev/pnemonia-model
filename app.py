@@ -12,7 +12,13 @@ import cv2
 from pytorch_grad_cam import GradCAMPlusPlus
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+import torch
 
+torch.set_num_threads(1)
+
+# Load model
+model = torch.load("model.pth", map_location="cpu")
+model.eval()
 app  = Flask(__name__)
 CORS(app)
 
